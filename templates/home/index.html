@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.8.0.js"></script>
+    <script type="text/javascript">
+        function clearLog() {
+            $("#data_log").empty();
+
+        }
+
+
+    var num = {{ nodeNum }};
+
+        function createView(id) {
+            return '<div id="node_'+id+'">\n' +
+                '                    <label id="node_id">ID '+id+'</label>\n' +
+                '                    <select id="data_type_'+id+'">\n' +
+                '                        <option value ="data">data</option>\n' +
+                '                        <option value ="split">split</option>\n' +
+                '                        <option value="output">output</option>\n' +
+                '                    </select>\n' +
+                '                    <label>out1 </label>\n' +
+                '                    <select id="o1_'+id+'">\n' +
+                '\n' +
+                '                    </select>\n' +
+                '                    <label>out2 </label>\n' +
+                '\n' +
+                '                    <select id="o2_'+id+'">\n' +
+                '\n' +
+                '                    </select>\n' +
+                '\n' +
+                '                    <button type="button" value="'+id+'" onclick="delNode(this.value)">delete</button>\n' +
+                '                    <br/>\n' +
+                '                </div>';
+        }
+
+        function addNode(){
+            var node = createView(num);
+            $("#content").append(node)
+            num++;
+            updateOut();
+        }
+
+        function delNode(value){
+            $("div").remove("#node_"+value);
+            updateOut();
+        }
+
+        function updateOut(){
+            let html = '<option value ="" ></option>'
+
+            for (let i =0;i<num;i++){
+                if(document.getElementById("node_"+i)) {
+                    html += '<option value ="'+i+'">'+i+'</option>'
+                }
+            }
+            for (let i =0;i<num;i++){
+                if(document.getElementById("node_"+i)) {
+                    let o1 = $("#o1_"+i);
+                    let o2 = $("#o2_"+i);
+                    let v1 = o1.val();
+                    let v2 = o2.val();
+                    o1.empty()
+                    o1.append(html)
+                    o2.empty()
+                    o2.append(html)
+                    o1.val(v1);
+                    o2.val(v2);
+
+                }
+            }
+        }
+
+        function getNode(id,type,out1,out2){
+            let obj = {};
+            obj.id = id;
+            obj.type = type;
+            obj.out = [];
+            if(out1 !== ""){
+               obj.out.push(parseInt(out1));
+            }
+            if(out2 !== ""){
+               obj.out.push(parseInt(out2));
+            }
+            return obj;
+        }
+
+        $(document).ready(function(){
+            for(let i=0;i<num;i++){
+                $("#content").append(createView(i))
+            }
+            $("form").submit(function(e){
+                e.preventDefault();
+
+                {#构造model#}
+                let model = {};
+                model.dag = {nodes:[]};
+                for (let i =0;i<num;i++){
+                    if(document.getElementById("node_"+i)) {
+                        model.dag.nodes.push(getNode(i, $("#data_type_" + i).val(), $("#o1_" + i).val(), $("#o2_" + i).val()));
+                    }
+                }
+
+                {#post#}
+                fetch('/api/', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: new Headers({
+                        'Accept': 'application/json',
+                        'X-CSRFToken': $('form').serializeArray()[0].value
+                    }),
+                    body: JSON.stringify(model)
+                })
+                .then((res)=> res.json())
+                .then((jsonObj)=>{
+                    console.log(jsonObj)
+                    $("#data_log").append(jsonObj+'<br/><br/>')
+                })
+
+            });
+            updateOut();
+        });
+
+    </script>
+    </head>
+<body>
+
+
+        <form id="form" action="/api/" method="post">
+            <input type="submit" value="submit">
+            <br/>
+            {% csrf_token %}
+        </form>
+        <div id="content">
+
+        </div>
+
+        <button onclick="addNode()">add node</button>
+        <br/>
+        <button onclick="clearLog()">clear</button>
+        <div id="data_log"></div>
+
+
+</body>
+</html>
