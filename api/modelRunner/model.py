@@ -6,11 +6,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import LinearRegression
 from sklearn import tree
+from sklearn import neighbors
 from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, auc, roc_curve, roc_auc_score
 
 
 class Node:
+    """
+    Node class is the parent class of nodes like DataNode, SplitNode...
+    It represents an operation in the process of building a model。
+    """
     def __init__(self, jsonNode):
         # state:0未开始 1等待左侧数据 2等待右侧数据 3结束
         self.state = 0
@@ -31,21 +36,29 @@ class Node:
 
 
 class DataNode(Node):
-    '''
+    """
     Wine 红酒产地：load_wine()
     Iris 花数据集：load_iris()
     乳腺癌数据集：load_breast_cancer()：简单经典的用于二分类任务的数据集
     糖尿病数据集：load_diabetes()：经典的用于回归认为的数据集，值得注意的是，这10个特征中的每个特征都已经被处理成0均值，方差归一化的特征值，
     波士顿房价数据集：load_boston()：经典的用于回归任务的数据集
-    体能训练数据集：load_linnerud()：经典的用于多变量回归任务的数据集，其内部包含两个小数据集：Excise是对3个训练变量的20次观测（体重，腰围，脉搏），physiological是对3个生理学变量的20次观测（引体向上，仰卧起坐，立定跳远）
-    '''
+    """
 
     def __init__(self, jsonNode):
+        """
+
+        :param jsonNode: (JSON obj)  It's the json form of your model.
+        """
         Node.__init__(self, jsonNode)
-        self.out = jsonNode['out1']
+        if 'out1' in jsonNode:
+            self.out = jsonNode['out1']
+        else:
+            self.out = []
         self.dataset = jsonNode['config']['dataset']
 
-    def run(self, config={}):
+    def run(self, config=None):
+        if config is None:
+            config = {}
         self.state = 2
         dataset = self.getDataSet(self.dataset)
         self.data = dataset.data
@@ -53,6 +66,11 @@ class DataNode(Node):
         return [(self.out, {'data': self.data, 'target': self.target})]
 
     def getDataSet(self, dataset):
+        """
+        get dataset from param "dataset"
+        :param dataset: (str) dataset name
+        :return: dataset obj
+        """
         if self.dataset == 'iris':
             return load_iris()
         elif self.dataset == 'boston':
@@ -61,19 +79,26 @@ class DataNode(Node):
             return load_breast_cancer()
         elif self.dataset == 'diabetes':
             return load_diabetes()
-        elif self.dataset == 'linnerud':
-            return load_linnerud()
         elif self.dataset == 'wine':
             return load_wine()
 
-    def preview(self):
+    def preview(self,size=10):
         # TODO 预览信息都需要什么
 
         res = self.run()
-        # print(res[0][1]['data'])
-        slice = random.sample(res[0][1]['data'].tolist(), 3)
-        for i in slice:
-            print(i)
+
+        # slice = random.sample(res[0][1]['data'].tolist(), 3)
+
+        dataLength = len(res[0][1]['data'])
+        if size >= dataLength:
+            size = dataLength -1
+        elif size < 0:
+            size = 0
+        slice = random.sample(range(0, dataLength), size)
+
+
+        # for i in slice:
+            # print(i)
 
 
 class SplitNode(Node):
@@ -115,6 +140,17 @@ class DecisionTreeNode(Node):
     def run(self, config):
         self.state = 2
         self.classifier = tree.DecisionTreeClassifier()
+        self.classifier.fit(config['data'], config['target'])
+        return [(self.out, {'data': config['data'], 'target': config['target'], 'classifier': self.classifier})]
+
+class KnnNode(Node):
+    def __init__(self, jsonNode):
+        Node.__init__(self, jsonNode)
+        self.out = jsonNode['out1']
+
+    def run(self, config):
+        self.state = 2
+        self.classifier = neighbors.KNeighborsClassifier()
         self.classifier.fit(config['data'], config['target'])
         return [(self.out, {'data': config['data'], 'target': config['target'], 'classifier': self.classifier})]
 
@@ -200,9 +236,9 @@ class ScoreNode(Node):
         print("accuracy:", accuracy_score(config['target_test'], config['predict']))
         # 大多数方法是处理二分类的
         # 联系小方 处理此处问题
-        print("precision:",precision_score(config['target_test'],config['predict'],average=None))
-        print("recall:",recall_score(config['target_test'],config['predict'],average=None))
-        print("f1:",f1_score(config['target_test'],config['predict'],average=None))
+        print("precision:", precision_score(config['target_test'], config['predict'], average=None))
+        print("recall:", recall_score(config['target_test'], config['predict'], average=None))
+        print("f1:", f1_score(config['target_test'], config['predict'], average=None))
 
         # print("roc_auc",roc_auc_score(config['target_test'],config['predict'],average=None))
 
@@ -216,27 +252,59 @@ class ScoreNode(Node):
 
 
 class Model:
+    """
+    This class is the abstraction of your machine learning model.
+    """
     def __init__(self, jsonData):
-        # 数据作为起点
+        """
+        :param jsonData: (JSON obj)  It's the json form of your model.
+            A jsonData demo:
+
+            model = {'dag': {'nodes': [
+                {'id': 0, 'type': 'DataNode', 'out1': [{'node': 1, 'position': 2}], 'out2': [],
+                 'config': {'dataset': 'cancer'}},
+                {'id': 1, 'type': 'SplitNode', 'out1': [{'node': 4, 'position': 2}], 'out2': [{'node': 5, 'position': 1}]},
+                {'id': 4, 'type': 'NaiveBayesNode', 'out1': [{'node': 5, 'position': 0}], 'out2': [],
+                 'config': {'algorithm': 'gaussian'}},
+                {'id': 5, 'type': 'PredictNode', 'out1': [{'node': 6, 'position': 2}], 'out2': []},
+                {'id': 6, 'type': 'ScoreNode', 'out1': [], 'out2': []}
+                ]
+            }
+        }
+        """
+        # use dataNode as startNodes
         self.startNodes = []
-        # id->node
+
+        # find a node by its id
         self.hashNode = {}
-        # list
+
+        # a list of all node
         self.nodeList = []
-        self.paraseNode(jsonData)
+
+        self.parseNode(jsonData)
 
     # 检查模型是否存在问题
     def modelIsRight(self):
-        # 检查模型节点的唯一性
+        """
+        check model
+        :return: True for right
+        """
+
+        # step 1 : check same id
         if len(self.hashNode) != len(self.nodeList):
             print('节点重复ID')
             return False
+        # step 2 : check ring
         # TODO 不能有环（自己输入到自己）
 
         return True
 
-    # 从json数据构建DAG
-    def paraseNode(self, model):
+    def parseNode(self, model):
+        """
+        parse model from json data
+        :param model: (JSON obj) model's json data
+        :return: None
+        """
         self.nodes = model['dag']['nodes']
         for node in self.nodes:
             n = Node.buildNode(node)
